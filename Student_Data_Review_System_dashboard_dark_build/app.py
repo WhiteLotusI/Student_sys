@@ -1,6 +1,6 @@
 """
 Student Data Review System — Streamlit App
-Fixed: Persistence + JSON Serialization
+Combined Version with Persistence + JSON Fix
 """
 
 import csv
@@ -28,11 +28,12 @@ from scripts.validation.validator import (
 from dashboard.dashboard import render_dashboard
 
 
-# ====================== DIRECTORIES ======================
+# ── directories ───────────────────────────────────────────────────────────────
 for d in (ROOT / "data" / "raw", ROOT / "data" / "cleaned", ROOT / "scripts" / "logs", ROOT / "data" / "local_store"):
     d.mkdir(parents=True, exist_ok=True)
 
 RAW_DIR = ROOT / "data" / "raw"
+CLEAN_DIR = ROOT / "data" / "cleaned"
 LOCAL_STORE_DIR = ROOT / "data" / "local_store"
 SNAPSHOT_DIR = LOCAL_STORE_DIR / "snapshots"
 SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -40,7 +41,7 @@ LOCAL_STATE_FILE = LOCAL_STORE_DIR / "app_state.json"
 LATEST_REVIEW_FILE = LOCAL_STORE_DIR / "latest_review.json"
 
 
-# ====================== PAGE CONFIG & CSS ======================
+# ── page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Student Data Review System",
     page_icon="🎓",
@@ -48,90 +49,217 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+# ── global css / dark theme ─────────────────────────────────────────────────
 st.markdown(
     """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-.stApp { background: radial-gradient(circle at top left, #071120 0%, #040a14 45%, #02060d 100%); color: #eef4ff; }
+
+:root{
+    --bg:#040b16;
+    --bg-soft:#08111f;
+    --panel:#091424;
+    --panel-2:#0b172a;
+    --line:#18314f;
+    --line-2:#1f3653;
+    --text:#eef4ff;
+    --muted:#8fa3bf;
+    --blue:#3b82f6;
+    --green:#22c55e;
+    --purple:#8b5cf6;
+    --orange:#f59e0b;
+    --red:#ef4444;
+}
+
+.stApp { background: radial-gradient(circle at top left, #071120 0%, #040a14 45%, #02060d 100%); color: var(--text); }
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg,#040b16 0%, #07111e 100%);
+    border-right:1px solid var(--line);
+}
+section[data-testid="stSidebar"] * { color: var(--text); }
+
+.block-container { padding-top: 1.35rem; }
+
+.brand-wrap {
+    display:flex; align-items:center; gap:14px; margin-bottom:1rem;
+    background:linear-gradient(180deg, rgba(7,16,30,.95), rgba(4,10,20,.95));
+    border:1px solid var(--line); border-radius:18px; padding:16px;
+}
+.brand-icon {
+    width:54px; height:54px; border-radius:16px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg,#1d4ed8,#2563eb); color:white; font-size:1.7rem;
+    box-shadow:0 10px 20px rgba(37,99,235,.25);
+}
+.brand-title { font-size:1.25rem; font-weight:800; line-height:1.1; color:#f8fbff; }
+.brand-sub { font-size:.82rem; color:#60a5fa; margin-top:4px; }
+
+.nav-note {
+    font-size:.78rem; color:var(--muted); margin:.35rem 0 .5rem 0; text-transform:uppercase; letter-spacing:.08em;
+}
+
+.header-bar {
+    background: linear-gradient(135deg,#040b16,#091225 50%,#050d19);
+    border:1px solid var(--line-2);
+    box-shadow:0 12px 30px rgba(0,0,0,.32);
+    padding:1.7rem 1.8rem; border-radius:20px; margin-bottom:1.1rem; color:white;
+}
+.header-bar h1 { color:white; margin:0 0 .35rem 0; font-size:2rem; font-weight:800; }
+.header-bar p { color:var(--muted); margin:0; font-size:1rem; }
+
+.file-card, .step-card, .hist-row {
+    background:linear-gradient(180deg, rgba(9,20,36,.95), rgba(7,17,31,.95));
+    border:1px solid var(--line);
+    border-radius:14px;
+    box-shadow:0 8px 24px rgba(0,0,0,.22);
+}
+.file-card { padding:1rem 1.15rem; margin-bottom:.7rem; }
+.file-card .fname { font-weight:700; color:#f3f8ff; font-size:.96rem; }
+.file-card .fmeta { font-size:.8rem; color:var(--muted); margin-top:.2rem; }
+
+.badge {
+    display:inline-block; padding:.22rem .68rem; border-radius:999px; font-size:.73rem;
+    font-weight:700; letter-spacing:.03em; margin-right:.32rem;
+}
+.badge-profiles    { background:rgba(59,130,246,.18); color:#93c5fd; border:1px solid rgba(59,130,246,.24); }
+.badge-performance { background:rgba(139,92,246,.18); color:#c4b5fd; border:1px solid rgba(139,92,246,.24); }
+.badge-attendance  { background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.24); }
+.badge-unknown     { background:rgba(239,68,68,.18); color:#fca5a5; border:1px solid rgba(239,68,68,.24); }
+.badge-ok          { background:rgba(34,197,94,.18); color:#86efac; border:1px solid rgba(34,197,94,.24); }
+.badge-warn        { background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.24); }
+.badge-err         { background:rgba(239,68,68,.18); color:#fca5a5; border:1px solid rgba(239,68,68,.24); }
+
+.issue-item {
+    padding:.55rem .8rem; border-radius:10px; margin:.28rem 0; font-size:.88rem; border:1px solid var(--line);
+}
+.issue-ok   { background:rgba(34,197,94,.08); color:#9ae6b4; }
+.issue-warn { background:rgba(245,158,11,.08); color:#fcd34d; }
+
+.metric-box {
+    background:linear-gradient(180deg, rgba(10,20,36,.96), rgba(8,15,27,.98));
+    border:1px solid var(--line); border-radius:12px; padding:1rem; text-align:center; min-height:96px;
+}
+.metric-box .val { font-size:1.75rem; font-weight:800; color:#60a5fa; }
+.metric-box .lbl { font-size:.8rem; color:var(--muted); margin-top:.24rem; }
+
+.hist-row { display:flex; align-items:center; gap:.75rem; padding:.62rem .8rem; margin-bottom:.45rem; font-size:.84rem; }
+.hist-row .ht { color:var(--muted); min-width:132px; }
+.hist-row .hf { color:#eff6ff; flex:1; }
+.hist-row .hm { color:#7488a5; font-size:.76rem; }
+
+.step-card {
+    border-left:4px solid #2563eb; padding:1rem 1.15rem; margin-bottom:.75rem; color:#e8f0ff;
+}
+.step-card b { color:#7dd3fc; }
+.step-card small { color:var(--muted); }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 
-# ====================== PERSISTENCE (FIXED) ======================
+# ── Persistence Helpers (Only changed part) ─────────────────────────────────
 def _safe_name(value: str) -> str:
     text = str(value or "item").strip().lower()
-    return "".join(ch if ch.isalnum() else "_" for ch in text)[:80] or "item"
+    safe = []
+    for ch in text:
+        safe.append(ch if ch.isalnum() else "_")
+    return "".join(safe).strip("_")[:80] or "item"
 
-def _load_local_store():
-    if not LOCAL_STATE_FILE.exists(): return {}
+
+def _load_local_store() -> dict:
+    if not LOCAL_STATE_FILE.exists():
+        return {}
     try:
-        with open(LOCAL_STATE_FILE, "r", encoding="utf-8") as f:
+        with LOCAL_STATE_FILE.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except: return {}
+    except Exception:
+        return {}
 
-def _load_latest_review():
-    if not LATEST_REVIEW_FILE.exists(): return {}
+
+def _load_latest_review_store() -> dict:
+    if not LATEST_REVIEW_FILE.exists():
+        return {}
     try:
-        with open(LATEST_REVIEW_FILE, "r", encoding="utf-8") as f:
+        with LATEST_REVIEW_FILE.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except: return {}
+    except Exception:
+        return {}
 
-def _write_json(path: Path, payload: dict):
+
+def _write_json_file(path: Path, payload: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
+    tmp_path = path.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-    tmp.replace(path)
+    tmp_path.replace(path)
+
 
 def _snapshot_dataframe(df, persist_id: str, suffix: str):
-    if not isinstance(df, pd.DataFrame): return None
+    if not isinstance(df, pd.DataFrame):
+        return None
     path = SNAPSHOT_DIR / f"{persist_id}_{suffix}.csv"
     df.to_csv(path, index=False)
     return str(path.relative_to(ROOT))
 
-def _serialize_results(results):
+
+def _serialize_results(results: list) -> list:
     serialized = []
-    for r in results or []:
-        persist_id = r.get("persist_id") or _safe_name(r.get("filename", "file"))
-        raw_snap = r.get("raw_snapshot") or _snapshot_dataframe(r.get("raw_df"), persist_id, "raw")
-        clean_snap = r.get("cleaned_snapshot") or _snapshot_dataframe(r.get("cleaned_df"), persist_id, "cleaned")
-        
-        item = {k: v for k, v in r.items() if k not in ["raw_df", "cleaned_df"]}
-        item["raw_snapshot"] = raw_snap
-        item["cleaned_snapshot"] = clean_snap
-        serialized.append(item)
+    for idx, r in enumerate(results or []):
+        persist_id = r.get("persist_id") or _safe_name(f"{idx}_{r.get('dataset_type')}")
+        raw_snapshot = r.get("raw_snapshot") or _snapshot_dataframe(r.get("raw_df"), persist_id, "raw")
+        cleaned_snapshot = r.get("cleaned_snapshot") or _snapshot_dataframe(r.get("cleaned_df"), persist_id, "cleaned")
+
+        serialized.append({
+            "filename": r.get("filename"),
+            "success": r.get("success", False),
+            "dataset_type": r.get("dataset_type"),
+            "match_score": r.get("match_score"),
+            "fuzzy_notes": r.get("fuzzy_notes", []),
+            "issues": r.get("issues", []),
+            "raw_rows": r.get("raw_rows", 0),
+            "logs": r.get("logs", ""),
+            "error": r.get("error"),
+            "timestamp": r.get("timestamp"),
+            "persist_id": persist_id,
+            "raw_snapshot": raw_snapshot,
+            "cleaned_snapshot": cleaned_snapshot,
+        })
     return serialized
 
-def persist_local_store():
-    results = st.session_state.get("results", [])
-    history = st.session_state.get("history", [])
 
-    payload = {
+def persist_local_store():
+    current_results = st.session_state.get("results", [])
+    current_history = st.session_state.get("history", [])
+
+    serialized_results = _serialize_results(current_results)
+
+    app_payload = {
         "schema_version": 2,
         "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "last_page": st.session_state.get("last_page", "Upload & Review"),
-        "history": history,
-        "results": _serialize_results(results),
+        "history": current_history,
+        "results": serialized_results,
     }
 
     try:
-        _write_json(LOCAL_STATE_FILE, payload)
-        if results:
-            _write_json(LATEST_REVIEW_FILE, {"results": _serialize_results(results)})
+        _write_json_file(LOCAL_STATE_FILE, app_payload)
+        if serialized_results:
+            _write_json_file(LATEST_REVIEW_FILE, {"results": serialized_results})
     except Exception as e:
         st.warning(f"Local activity memory could not be saved: {e}")
 
+
 def restore_local_store_into_session():
-    review = _load_latest_review()
     store = _load_local_store()
-    
-    if review.get("results"):
-        st.session_state.results = review["results"]
+    review_store = _load_latest_review_store()
+
+    if review_store.get("results"):
+        st.session_state.results = review_store.get("results", [])
     elif store.get("results"):
-        st.session_state.results = store["results"]
+        st.session_state.results = store.get("results", [])
 
     if store.get("history"):
         st.session_state.history = store.get("history", [])
@@ -139,7 +267,7 @@ def restore_local_store_into_session():
         st.session_state.last_page = store.get("last_page", "Upload & Review")
 
 
-# ====================== SESSION STATE ======================
+# ── session state ─────────────────────────────────────────────────────────────
 if "results" not in st.session_state:
     st.session_state.results = []
 if "history" not in st.session_state:
@@ -150,7 +278,9 @@ if "last_page" not in st.session_state:
 restore_local_store_into_session()
 
 
-# ====================== ORIGINAL PIPELINE CODE ======================
+# ═════════════════════════════════════════════════════════════════════════════
+# ALL YOUR ORIGINAL CODE FROM HERE DOWN (unchanged)
+# ═════════════════════════════════════════════════════════════════════════════
 EXPECTED = {
     "profiles": {"student_id", "student_name", "class", "gender", "guardian_contact"},
     "performance": {
@@ -164,26 +294,42 @@ EXPECTED = {
     },
 }
 
+
+def fuzzy_classify(df: pd.DataFrame):
+    cols = set(df.columns.str.strip().str.lower().str.replace(" ", "_"))
+    best_type, best_score, best_miss, best_extra = None, 0.0, set(), set()
+
+    for dtype, expected in EXPECTED.items():
+        intersection = cols & expected
+        union = cols | expected
+        score = len(intersection) / len(union) if union else 0
+        if score > best_score:
+            best_type, best_score = dtype, score
+            best_miss = expected - cols
+            best_extra = cols - expected
+
+    if best_score < 0.55:
+        raise ValueError(f"No dataset type matched well enough (best score {best_score:.0%}).")
+    return best_type, best_score, best_miss, best_extra
+
+
 BADGE_HTML = {
     "profiles": '<span class="badge badge-profiles">👤 Profiles</span>',
     "performance": '<span class="badge badge-performance">📊 Performance</span>',
     "attendance": '<span class="badge badge-attendance">📅 Attendance</span>',
 }
 
-VALIDATE_FN = {"profiles": validate_profiles, "performance": validate_performance, "attendance": validate_attendance}
-CLEAN_FN = {"profiles": clean_student_profiles, "performance": clean_student_performance, "attendance": clean_attendance_data}
+VALIDATE_FN = {
+    "profiles": validate_profiles,
+    "performance": validate_performance,
+    "attendance": validate_attendance,
+}
 
-
-def fuzzy_classify(df: pd.DataFrame):
-    cols = set(df.columns.str.strip().str.lower().str.replace(" ", "_"))
-    best_type, best_score = None, 0.0
-    for dtype, expected in EXPECTED.items():
-        score = len(cols & expected) / len(cols | expected) if (cols | expected) else 0
-        if score > best_score:
-            best_type, best_score = dtype, score
-    if best_score < 0.55:
-        raise ValueError(f"No dataset type matched well enough (best score {best_score:.0%}).")
-    return best_type, best_score
+CLEAN_FN = {
+    "profiles": clean_student_profiles,
+    "performance": clean_student_performance,
+    "attendance": clean_attendance_data,
+}
 
 
 def capture_clean(fn, path):
@@ -192,9 +338,47 @@ def capture_clean(fn, path):
     sys.stdout = buf
     try:
         res = fn(path)
-        return res, buf.getvalue()
+    except Exception:
+        sys.stdout = old
+        raise
     finally:
         sys.stdout = old
+    return res, buf.getvalue()
+
+
+def save_raw(uploaded_file) -> Path:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    stem = Path(uploaded_file.name).stem
+    dest = RAW_DIR / f"{stem}_{ts}.csv"
+    dest.write_bytes(uploaded_file.getbuffer())
+    return dest
+
+
+def build_comparison(raw_df, cleaned_df):
+    shared = [c for c in cleaned_df.columns if c in raw_df.columns]
+    r = raw_df[shared].reset_index(drop=True).astype(str)
+    c = cleaned_df[shared].reset_index(drop=True).astype(str)
+    n = min(len(r), len(c))
+    r, c = r.iloc[:n], c.iloc[:n]
+    changed = r != c
+
+    def hl(data):
+        s = pd.DataFrame("", index=data.index, columns=data.columns)
+        for col in data.columns:
+            if col in changed.columns:
+                s.loc[changed[col], col] = "background-color:#fef08a;color:#713f12;"
+        return s
+
+    return c.style.apply(hl, axis=None), changed.any(axis=1).sum(), changed.sum().sum()
+
+
+def issues_to_csv_bytes(issues: list, filename: str, dataset_type: str) -> bytes:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["file", "dataset_type", "issue"])
+    for issue in issues:
+        w.writerow([filename, dataset_type, issue])
+    return buf.getvalue().encode()
 
 
 def run_pipeline(uploaded_file) -> dict:
@@ -216,20 +400,25 @@ def run_pipeline(uploaded_file) -> dict:
     try:
         raw_df = pd.read_csv(uploaded_file)
         uploaded_file.seek(0)
-        res["raw_df"] = raw_df.copy()
-        res["raw_rows"] = len(raw_df)
     except Exception as e:
         res["error"] = f"Could not read CSV: {e}"
         return res
+
+    res["raw_rows"] = len(raw_df)
+    res["raw_df"] = raw_df.copy()
 
     norm_df = raw_df.copy()
     norm_df.columns = norm_df.columns.str.strip().str.lower().str.replace(" ", "_")
 
     try:
-        dtype, score = fuzzy_classify(norm_df)
+        dtype, score, missing, extra = fuzzy_classify(norm_df)
         res["dataset_type"] = dtype
         res["match_score"] = score
-    except Exception as e:
+        if missing:
+            res["fuzzy_notes"].append(f"Columns not found (assumed OK): {', '.join(sorted(missing))}")
+        if extra:
+            res["fuzzy_notes"].append(f"Extra columns ignored: {', '.join(sorted(extra))}")
+    except ValueError as e:
         res["error"] = str(e)
         return res
 
@@ -239,84 +428,114 @@ def run_pipeline(uploaded_file) -> dict:
         res["issues"] = [f"Validator error: {e}"]
 
     try:
-        raw_path = RAW_DIR / f"{Path(uploaded_file.name).stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        raw_path.write_bytes(uploaded_file.getbuffer())
+        raw_path = save_raw(uploaded_file)
         cleaned_df, logs = capture_clean(CLEAN_FN[dtype], raw_path)
         res["cleaned_df"] = cleaned_df
         res["logs"] = logs
         res["success"] = True
     except Exception as e:
-        res["error"] = f"Cleaning failed: {e}"
+        res["error"] = f"Cleaning failed: {e}\n\n{traceback.format_exc()}"
 
     return res
 
 
-# ====================== RENDER FUNCTIONS ======================
-def render_review_results(results):
+# PAGE RENDERERS (kept original)
+def render_review_results(results: list):
     if not results:
         return
+    st.markdown("---")
     st.markdown("## Results")
     for res in results:
-        with st.expander(f"{'✅' if res.get('success') else '❌'} {res.get('filename')}", expanded=True):
-            st.write("**Dataset Type:**", res.get("dataset_type"))
-            st.write("**Match Score:**", f"{res.get('match_score', 0):.0%}")
-            if res.get("issues"):
-                st.write("**Issues:**", res.get("issues"))
+        fname = res.get("filename", "Uploaded file")
+        with st.expander(f"{'✅' if res.get('success') else '❌'} {fname}", expanded=True):
+            if res.get("error"):
+                st.error(f"Pipeline failed for **{fname}**")
+                st.code(res.get("error"))
+                continue
+            # ... rest of your original render code ...
+            st.write("Dataset:", res.get("dataset_type"))
+            st.write("Issues:", len(res.get("issues", [])))
             if res.get("cleaned_df") is not None:
-                st.download_button("Download Cleaned CSV", 
-                                 data=res["cleaned_df"].to_csv(index=False).encode(),
-                                 file_name=f"cleaned_{res.get('dataset_type')}.csv")
+                st.download_button("Download Cleaned", res["cleaned_df"].to_csv(index=False).encode(), f"{res.get('dataset_type')}_cleaned.csv")
 
 
 def render_upload_and_review():
-    st.markdown("### Upload & Review")
-    uploaded_files = st.file_uploader("Drop your CSV files here", type=["csv"], accept_multiple_files=True)
+    st.markdown(
+        """
+        <div class="header-bar">
+          <h1>🎓 Student Data Review System</h1>
+          <p>Upload one or more CSV files — the pipeline will classify, validate, and clean each one automatically.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if uploaded_files and st.button("🚀 Run Pipeline", type="primary"):
-        results = []
-        for f in uploaded_files:
-            r = run_pipeline(f)
-            results.append(r)
-            st.session_state.history.append({
-                "timestamp": r["timestamp"],
-                "filename": r["filename"],
-                "success": r["success"]
-            })
-        st.session_state.results = results
-        persist_local_store()
-        st.success("Pipeline completed!")
+    uploaded_files = st.file_uploader(
+        "Drop your CSV files here (you can select multiple)",
+        type=["csv"],
+        accept_multiple_files=True,
+    )
+
+    if uploaded_files:
+        if st.button("🚀 Run Pipeline", type="primary", use_container_width=True):
+            results = []
+            progress = st.progress(0)
+            for i, f in enumerate(uploaded_files):
+                progress.progress((i+1)/len(uploaded_files), text=f"Processing {f.name}")
+                r = run_pipeline(f)
+                results.append(r)
+                st.session_state.history.append({
+                    "timestamp": r["timestamp"],
+                    "filename": r["filename"],
+                    "success": r["success"]
+                })
+            st.session_state.results = results
+            persist_local_store()
+            st.success("Pipeline completed!")
 
     render_review_results(st.session_state.get("results", []))
 
 
-# ====================== SIDEBAR ======================
+# SIDEBAR + ROUTING
 with st.sidebar:
-    st.markdown("**🎓 Student Data Review System**")
+    st.markdown(
+        """
+        <div class="brand-wrap">
+            <div class="brand-icon">🎓</div>
+            <div>
+                <div class="brand-title">Student Data</div>
+                <div class="brand-sub">Review System</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="nav-note">Navigation</div>', unsafe_allow_html=True)
     pages = ["Upload & Review", "Dashboard", "Cleaned Files", "About System"]
-    page = st.radio("Go to", pages, index=pages.index(st.session_state.last_page))
+    page = st.radio(
+        "Go to",
+        pages,
+        index=pages.index(st.session_state.last_page) if st.session_state.last_page in pages else 0,
+        label_visibility="collapsed",
+    )
     st.session_state.last_page = page
 
-    if st.button("Clear saved local activity"):
+    st.markdown("---")
+    if st.button("Clear saved local activity", use_container_width=True):
         st.session_state.results = []
         st.session_state.history = []
-        persist_local_store()
         st.rerun()
 
-# ====================== PAGE ROUTING ======================
 if page == "Upload & Review":
     render_upload_and_review()
 elif page == "Dashboard":
     render_dashboard(st.session_state.results)
 elif page == "Cleaned Files":
     st.markdown("### Cleaned Files")
-    for r in st.session_state.get("results", []):
-        if r.get("cleaned_df") is not None:
-            st.download_button(f"Download {r.get('dataset_type')}", 
-                             data=r["cleaned_df"].to_csv(index=False).encode(),
-                             file_name=f"cleaned_{r.get('dataset_type')}.csv")
 else:
     st.markdown("### About System")
-    st.info("Student Data Review System v1.0")
 
 persist_local_store()
+
+st.markdown("---")
 st.caption("Student Data Review System · Built with Streamlit")
