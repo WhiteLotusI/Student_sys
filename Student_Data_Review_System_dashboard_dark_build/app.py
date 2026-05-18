@@ -456,17 +456,318 @@ def run_pipeline(uploaded_file) -> dict:
     return res
 
 
-# PAGE RENDERERS (your original)
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE RENDERERS
+# ═════════════════════════════════════════════════════════════════════════════
 def render_upload_and_review():
-    # ... (your original render_upload_and_review function as you posted)
-    # I'll assume you have it. If you need it pasted, let me know.
-    pass   # Replace with your full original function
+    st.markdown(
+        """
+        <div class="header-bar">
+          <h1>🎓 Student Data Review System</h1>
+          <p>Upload one or more CSV files — the pipeline will classify, validate, and clean each one automatically.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-# (Continue with your original sidebar and routing code)
+    uploaded_files = st.file_uploader(
+        "Drop your CSV files here (you can select multiple)",
+        type=["csv"],
+        accept_multiple_files=True,
+        help="Upload Student Profiles, Performance, and/or Attendance files together.",
+    )
 
-# For now, the critical fix is in place.
+    current_files_signature = {(f.name, f.size) for f in uploaded_files} if uploaded_files else set()
+    if current_files_signature != st.session_state.last_files_signature:
+        st.session_state.results = []
+        st.session_state.last_files_signature = current_files_signature
 
-persist_local_store()
+    if not uploaded_files:
+        st.info("⬆️ Upload one or more CSV files above to get started.")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(
+                """<div class="step-card"><b>👤 Student Profiles</b><br>
+                <small>student_id · student_name · class · gender · guardian_contact</small></div>""",
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                """<div class="step-card"><b>📊 Student Performance</b><br>
+                <small>record_id · scores · result · term · subject · teacher_comment …</small></div>""",
+                unsafe_allow_html=True,
+            )
+        with c3:
+            st.markdown(
+                """<div class="step-card"><b>📅 Attendance</b><br>
+                <small>attendance_id · days_present · days_absent · total_school_days …</small></div>""",
+                unsafe_allow_html=True,
+            )
+        return
+
+    st.markdown(f"**{len(uploaded_files)} file(s) ready**")
+    for f in uploaded_files:
+        st.markdown(
+            f"""
+            <div class="file-card">
+              <div class="fname">📄 {f.name}</div>
+              <div class="fmeta">{f.size / 1024:.1f} KB</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+    if st.button("🚀 Run Pipeline", type="primary", use_container_width=True):
+        results = []
+        progress = st.progress(0, text="Starting…")
+        for i, f in enumerate(uploaded_files):
+            progress.progress(int((i / len(uploaded_files)) * 100), text=f"Processing {f.name}…")
+            f.seek(0)
+            r = run_pipeline(f)
+            results.append(r)
+            st.session_state.history.append(
+                {
+                    "timestamp": r["timestamp"],
+                    "filename": r["filename"],
+                    "dataset_type": r["dataset_type"],
+                    "raw_rows": r["raw_rows"],
+                    "success": r["success"],
+                }
+            )
+        progress.progress(100, text="Done ✅")
+        st.session_state.results = results
+
+    results = st.session_state.results
+    if not results:
+        return
+
+    st.markdown("---")
+    st.markdown("## Results")
+
+    for res in results:
+        fname = res["filename"]
+        with st.expander(f"{'✅' if res['success'] else '❌'} {fname}", expanded=True):
+            if res["error"]:
+                st.error(f"Pipeline failed for **{fname}**")
+                st.code(res["error"])
+                continue
+
+            dtype = res["dataset_type"]
+            badge = BADGE_HTML.get(dtype, f'<span class="badge badge-unknown">{dtype}</span>')
+            score_pct = f"{res['match_score']:.0%}"
+            st.markdown(
+                f"**Step 1 — Dataset type** &nbsp; {badge} &nbsp;<span class='badge badge-ok'>Match {score_pct}</span>",
+                unsafe_allow_html=True,
+            )
+            if res["fuzzy_notes"]:
+                for note in res["fuzzy_notes"]:
+                    st.markdown(f'<div class="issue-item issue-warn">🔍 {note}</div>', unsafe_allow_html=True)
+
+            st.markdown("**Step 2 — Validation report**")
+            issues = res["issues"]
+            if not issues:
+                st.markdown('<div class="issue-item issue-ok">✅ No issues found.</div>', unsafe_allow_html=True)
+            else:
+                for issue in issues:
+                    st.markdown(f'<div class="issue-item issue-warn">⚠️ {issue}</div>', unsafe_allow_html=True)
+
+            report_bytes = issues_to_csv_bytes(issues, fname, dtype)
+            st.download_button(
+                label="⬇️ Download validation report",
+                data=report_bytes,
+                file_name=f"{Path(fname).stem}_validation_report.csv",
+                mime="text/csv",
+                key=f"val_{fname}",
+            )
+
+            st.markdown("**Step 3 — Before / After**")
+            raw_df = res["raw_df"]
+            cleaned_df = res["cleaned_df"]
+            rows_before = res["raw_rows"]
+            rows_after = len(cleaned_df)
+            rows_removed = rows_before - rows_after
+            styled_clean, rows_changed, cells_changed = build_comparison(raw_df, cleaned_df)
+
+            m1, m2, m3, m4, m5 = st.columns(5)
+            for col_obj, val, label in [
+                (m1, f"{rows_before:,}", "Rows original"),
+                (m2, f"{rows_after:,}", "Rows cleaned"),
+                (m3, f"{rows_removed:,}", "Rows removed"),
+                (m4, f"{rows_changed:,}", "Rows changed"),
+                (m5, f"{cells_changed:,}", "Cells changed"),
+            ]:
+                col_obj.markdown(
+                    f'<div class="metric-box"><div class="val">{val}</div><div class="lbl">{label}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+            tab_b, tab_a = st.tabs(["📋 Before (raw)", "✅ After (cleaned)"])
+            with tab_b:
+                st.caption(f"{rows_before:,} rows · {raw_df.shape[1]} columns")
+                st.dataframe(raw_df.head(20), use_container_width=True)
+            with tab_a:
+                st.caption(f"{rows_after:,} rows · 🟡 yellow cells were changed by the pipeline")
+                st.dataframe(styled_clean, use_container_width=True)
+
+            csv_bytes = cleaned_df.to_csv(index=False).encode()
+            ts_label = datetime.now().strftime("%Y%m%d_%H%M%S")
+            st.download_button(
+                label="⬇️ Download Cleaned CSV",
+                data=csv_bytes,
+                file_name=f"{dtype}_cleaned_{ts_label}.csv",
+                mime="text/csv",
+                key=f"dl_{fname}",
+                use_container_width=True,
+            )
+
+            with st.expander("📋 Pipeline logs", expanded=False):
+                st.code(res["logs"].strip() or "No output captured.", language="text")
+
+
+def render_cleaned_files_page():
+    st.markdown(
+        """
+        <div class="header-bar">
+          <h1>🧹 Cleaned Files</h1>
+          <p>Download the cleaned outputs generated by the current review session.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    results = st.session_state.results
+    if not results:
+        st.markdown('<div class="empty-card">No cleaned files yet. Run the pipeline first.</div>', unsafe_allow_html=True)
+        return
+
+    for r in results:
+        cleaned_df = r.get("cleaned_df")
+        if cleaned_df is None:
+            continue
+        dtype = (r.get("dataset_type") or "data").title()
+        fname = r.get("filename")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(
+                f"<div class='about-card'><b>{dtype}</b><br><span style='color:#8fa3bf'>{fname}</span><br><span style='color:#60a5fa'>{len(cleaned_df):,} cleaned rows</span></div>",
+                unsafe_allow_html=True,
+            )
+        with col2:
+            st.download_button(
+                f"⬇ Download {dtype}",
+                data=cleaned_df.to_csv(index=False).encode(),
+                file_name=f"cleaned_{dtype.lower()}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key=f"clean_page_{fname}",
+            )
+
+    disk_files = sorted(CLEAN_DIR.glob("*.csv"))
+    if disk_files:
+        st.markdown("### Files found on disk")
+        st.write([f.name for f in disk_files])
+
+
+def render_about_page():
+    st.markdown(
+        """
+        <div class="header-bar">
+          <h1>ℹ️ About System</h1>
+          <p>An offline-friendly Streamlit review system for student profiles, performance, and attendance CSVs.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            """
+            <div class="about-card">
+                <h3 style="margin-top:0;color:#f8fafc;">Core Features</h3>
+                <ul>
+                    <li>Multiple CSV upload in one review session</li>
+                    <li>Automatic dataset classification</li>
+                    <li>Validation issue reporting</li>
+                    <li>Cleaned data generation</li>
+                    <li>Dark analytics dashboard</li>
+                    <li>ZIP export for cleaned files + reports</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            """
+            <div class="about-card">
+                <h3 style="margin-top:0;color:#f8fafc;">Supported Datasets</h3>
+                <ul>
+                    <li>Student Profiles</li>
+                    <li>Student Performance</li>
+                    <li>Student Attendance</li>
+                </ul>
+                <p style="color:#8fa3bf; margin-bottom:0;">Built to help school administrators review data quality fast and download cleaned outputs.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SIDEBAR + NAVIGATION
+# ═════════════════════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="brand-wrap">
+            <div class="brand-icon">🎓</div>
+            <div>
+                <div class="brand-title">Student Data</div>
+                <div class="brand-sub">Review System</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="nav-note">Navigation</div>', unsafe_allow_html=True)
+    page = st.radio(
+        "Go to",
+        ["Upload & Review", "Dashboard", "Cleaned Files", "About System"],
+        label_visibility="collapsed",
+    )
+
+    st.markdown("---")
+    st.markdown("### 🕑 Upload History")
+    if not st.session_state.history:
+        st.caption("No runs yet — history appears here after processing.")
+    else:
+        for entry in reversed(st.session_state.history[-8:]):
+            status = "✅" if entry["success"] else "❌"
+            st.markdown(
+                f"""
+                <div class="hist-row">
+                  <span class="ht">{entry['timestamp']}</span>
+                  <span class="hf">{status} {entry['filename']}</span>
+                  <span class="hm">{entry.get('raw_rows',0):,} rows</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        if st.button("Clear history", use_container_width=True):
+            st.session_state.history = []
+            st.rerun()
+
+
+# ── route pages ───────────────────────────────────────────────────────────────
+if page == "Upload & Review":
+    render_upload_and_review()
+elif page == "Dashboard":
+    render_dashboard(st.session_state.results)
+elif page == "Cleaned Files":
+    render_cleaned_files_page()
+else:
+    render_about_page()
 
 st.markdown("---")
 st.caption("Student Data Review System · Built with Streamlit")
