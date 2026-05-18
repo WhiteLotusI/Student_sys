@@ -178,6 +178,25 @@ def _safe_name(value: str) -> str:
         safe.append(ch if ch.isalnum() else "_")
     return "".join(safe).strip("_")[:80] or "item"
 
+def ensure_dataframes_loaded(results):
+    """Restore DataFrames from snapshot files when needed"""
+    if not results:
+        return results
+    for r in results:
+        if isinstance(r.get("cleaned_df"), pd.DataFrame):
+            continue  # already loaded
+        if r.get("cleaned_snapshot"):
+            try:
+                r["cleaned_df"] = pd.read_csv(ROOT / r["cleaned_snapshot"])
+            except:
+                r["cleaned_df"] = None
+        if r.get("raw_snapshot"):
+            try:
+                r["raw_df"] = pd.read_csv(ROOT / r["raw_snapshot"])
+            except:
+                r["raw_df"] = None
+    return results
+
 
 def _load_local_store() -> dict:
     if not LOCAL_STATE_FILE.exists():
@@ -778,7 +797,7 @@ with st.sidebar:
 if page == "Upload & Review":
     render_upload_and_review()
 elif page == "Dashboard":
-    results = restore_dataframes(st.session_state.get("results", []))
+    results = ensure_dataframes_loaded(st.session_state.get("results", []))
     render_dashboard(results)
 elif page == "Cleaned Files":
     render_cleaned_files_page()
