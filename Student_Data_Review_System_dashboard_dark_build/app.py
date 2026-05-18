@@ -455,6 +455,21 @@ def run_pipeline(uploaded_file) -> dict:
 
     return res
 
+def restore_dataframes(results):
+    """Restore DataFrames from snapshots for dashboard"""
+    for r in results:
+        if r.get("cleaned_snapshot") and not isinstance(r.get("cleaned_df"), pd.DataFrame):
+            try:
+                r["cleaned_df"] = pd.read_csv(ROOT / r["cleaned_snapshot"])
+            except:
+                pass
+        if r.get("raw_snapshot") and not isinstance(r.get("raw_df"), pd.DataFrame):
+            try:
+                r["raw_df"] = pd.read_csv(ROOT / r["raw_snapshot"])
+            except:
+                pass
+    return results
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE RENDERERS
@@ -763,7 +778,8 @@ with st.sidebar:
 if page == "Upload & Review":
     render_upload_and_review()
 elif page == "Dashboard":
-    render_dashboard(st.session_state.results)
+    results = restore_dataframes(st.session_state.get("results", []))
+    render_dashboard(results)
 elif page == "Cleaned Files":
     render_cleaned_files_page()
 else:
