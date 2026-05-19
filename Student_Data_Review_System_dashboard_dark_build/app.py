@@ -26,9 +26,9 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
-from scripts.cleaning_logic.Student_attendance import clean_attendance_data
-from scripts.cleaning_logic.Student_performance import clean_student_performance
-from scripts.cleaning_logic.Student_profiles import clean_student_profiles
+from cleaning_logic.Student_attendance import clean_attendance_data
+from cleaning_logic.Student_performance import clean_student_performance
+from cleaning_logic.Student_profiles import clean_student_profiles
 from validation.validator import (
     validate_attendance,
     validate_performance,
