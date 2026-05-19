@@ -24,16 +24,16 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT))
 
-from cleaning_logic.Student_attendance import clean_attendance_data
-from cleaning_logic.Student_performance import clean_student_performance
-from cleaning_logic.Student_profiles import clean_student_profiles
-from validation.validator import (
+from scripts.cleaning_logic.Student_attendance import clean_attendance_data
+from scripts.cleaning_logic.Student_performance import clean_student_performance
+from scripts.cleaning_logic.Student_profiles import clean_student_profiles
+from scripts.validation.validator import (
     validate_attendance,
     validate_performance,
     validate_profiles,
 )
+from dashboard.dashboard import render_dashboard
 
 
 # ── directories ───────────────────────────────────────────────────────────────
@@ -371,7 +371,10 @@ def render_upload_and_review():
 
     current_files_signature = {(f.name, f.size) for f in uploaded_files} if uploaded_files else set()
     if current_files_signature != st.session_state.last_files_signature:
-        st.session_state.results = []
+        # Only clear results when a genuinely different set of files is uploaded
+        # Do NOT clear when signature becomes empty (happens after st.rerun())
+        if current_files_signature:
+            st.session_state.results = []
         st.session_state.last_files_signature = current_files_signature
 
     if not uploaded_files:
@@ -430,7 +433,6 @@ def render_upload_and_review():
             )
         progress.progress(100, text="Done ✅")
         st.session_state.results = results
-        st.rerun()
 
     results = st.session_state.results
     if not results:
@@ -656,7 +658,6 @@ with st.sidebar:
 if page == "Upload & Review":
     render_upload_and_review()
 elif page == "Dashboard":
-    from dashboard import render_dashboard
     render_dashboard(st.session_state.results)
 elif page == "Cleaned Files":
     render_cleaned_files_page()
