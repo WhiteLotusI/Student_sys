@@ -1,10 +1,19 @@
 """
 Student Data Review System — Streamlit App
+==========================================
+Features:
+  - Multi-file CSV upload
+  - Fuzzy dataset classification
+  - Validation + cleaning pipeline
+  - Dark-theme dashboard preview build
+  - Cleaned CSV downloads + ZIP export
+
+Run locally:
+    streamlit run app.py
 """
 
 import csv
 import io
-import json
 import sys
 import traceback
 from datetime import datetime
@@ -15,29 +24,24 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT))
 
 from scripts.cleaning_logic.Student_attendance import clean_attendance_data
 from scripts.cleaning_logic.Student_performance import clean_student_performance
 from scripts.cleaning_logic.Student_profiles import clean_student_profiles
-from scripts.validation.validator import (
+from validation.validator import (
     validate_attendance,
     validate_performance,
     validate_profiles,
 )
-from dashboard.dashboard import render_dashboard
 
 
 # ── directories ───────────────────────────────────────────────────────────────
-for d in (ROOT / "data" / "raw", ROOT / "data" / "cleaned", ROOT / "scripts" / "logs", ROOT / "data" / "local_store"):
+for d in (ROOT / "data" / "raw", ROOT / "data" / "cleaned", ROOT / "scripts" / "logs"):
     d.mkdir(parents=True, exist_ok=True)
 
 RAW_DIR = ROOT / "data" / "raw"
 CLEAN_DIR = ROOT / "data" / "cleaned"
-LOCAL_STORE_DIR = ROOT / "data" / "local_store"
-SNAPSHOT_DIR = LOCAL_STORE_DIR / "snapshots"
-SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-LOCAL_STATE_FILE = LOCAL_STORE_DIR / "app_state.json"
-LATEST_REVIEW_FILE = LOCAL_STORE_DIR / "latest_review.json"
 
 
 # ── page config ───────────────────────────────────────────────────────────────
@@ -170,150 +174,19 @@ section[data-testid="stSidebar"] * { color: var(--text); }
 )
 
 
-# ── Persistence Fix (Only this part was updated) ─────────────────────────────
-def _safe_name(value: str) -> str:
-    text = str(value or "item").strip().lower()
-    safe = []
-    for ch in text:
-        safe.append(ch if ch.isalnum() else "_")
-    return "".join(safe).strip("_")[:80] or "item"
-
-def ensure_dataframes_loaded(results):
-    """Restore DataFrames from snapshot files when needed"""
-    if not results:
-        return results
-    for r in results:
-        if isinstance(r.get("cleaned_df"), pd.DataFrame):
-            continue  # already loaded
-        if r.get("cleaned_snapshot"):
-            try:
-                r["cleaned_df"] = pd.read_csv(ROOT / r["cleaned_snapshot"])
-            except:
-                r["cleaned_df"] = None
-        if r.get("raw_snapshot"):
-            try:
-                r["raw_df"] = pd.read_csv(ROOT / r["raw_snapshot"])
-            except:
-                r["raw_df"] = None
-    return results
-
-
-def _load_local_store() -> dict:
-    if not LOCAL_STATE_FILE.exists():
-        return {}
-    try:
-        with LOCAL_STATE_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _load_latest_review_store() -> dict:
-    if not LATEST_REVIEW_FILE.exists():
-        return {}
-    try:
-        with LATEST_REVIEW_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _write_json_file(path: Path, payload: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    tmp_path.replace(path)
-
-
-def _snapshot_dataframe(df, persist_id: str, suffix: str):
-    if not isinstance(df, pd.DataFrame):
-        return None
-    path = SNAPSHOT_DIR / f"{persist_id}_{suffix}.csv"
-    df.to_csv(path, index=False)
-    return str(path.relative_to(ROOT))
-
-
-def _serialize_results(results: list) -> list:
-    serialized = []
-    for idx, r in enumerate(results or []):
-        persist_id = r.get("persist_id") or _safe_name(f"{idx}_{r.get('dataset_type')}")
-        raw_snapshot = r.get("raw_snapshot") or _snapshot_dataframe(r.get("raw_df"), persist_id, "raw")
-        cleaned_snapshot = r.get("cleaned_snapshot") or _snapshot_dataframe(r.get("cleaned_df"), persist_id, "cleaned")
-
-        serialized.append({
-            "filename": r.get("filename"),
-            "success": r.get("success", False),
-            "dataset_type": r.get("dataset_type"),
-            "match_score": r.get("match_score"),
-            "fuzzy_notes": r.get("fuzzy_notes", []),
-            "issues": r.get("issues", []),
-            "raw_rows": r.get("raw_rows", 0),
-            "logs": r.get("logs", ""),
-            "error": r.get("error"),
-            "timestamp": r.get("timestamp"),
-            "persist_id": persist_id,
-            "raw_snapshot": raw_snapshot,
-            "cleaned_snapshot": cleaned_snapshot,
-        })
-    return serialized
-
-
-def persist_local_store():
-    current_results = st.session_state.get("results", [])
-    current_history = st.session_state.get("history", [])
-
-    serialized_results = _serialize_results(current_results)
-
-    app_payload = {
-        "schema_version": 2,
-        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "last_page": st.session_state.get("last_page", "Upload & Review"),
-        "history": current_history,
-        "results": serialized_results,
-    }
-
-    try:
-        _write_json_file(LOCAL_STATE_FILE, app_payload)
-        if serialized_results:
-            _write_json_file(LATEST_REVIEW_FILE, {"results": serialized_results})
-    except Exception as e:
-        st.warning(f"Local activity memory could not be saved: {e}")
-
-
-def restore_local_store_into_session():
-    store = _load_local_store()
-    review_store = _load_latest_review_store()
-
-    if review_store.get("results"):
-        st.session_state.results = review_store.get("results", [])
-    elif store.get("results"):
-        st.session_state.results = store.get("results", [])
-
-    if store.get("history"):
-        st.session_state.history = store.get("history", [])
-    if store.get("last_page"):
-        st.session_state.last_page = store.get("last_page", "Upload & Review")
-
-
 # ── session state ─────────────────────────────────────────────────────────────
 for key, default in [
     ("results", []),
     ("history", []),
-    ("last_page", "Upload & Review"),
     ("last_files_signature", set()),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
-restore_local_store_into_session()
-
 
 # ═════════════════════════════════════════════════════════════════════════════
-# FUZZY CLASSIFIER + ALL REMAINING ORIGINAL CODE
+# FUZZY CLASSIFIER
 # ═════════════════════════════════════════════════════════════════════════════
-# (Everything below this line is your original code)
-
 EXPECTED = {
     "profiles": {"student_id", "student_name", "class", "gender", "guardian_contact"},
     "performance": {
@@ -474,21 +347,6 @@ def run_pipeline(uploaded_file) -> dict:
 
     return res
 
-def restore_dataframes(results):
-    """Restore DataFrames from snapshots for dashboard"""
-    for r in results:
-        if r.get("cleaned_snapshot") and not isinstance(r.get("cleaned_df"), pd.DataFrame):
-            try:
-                r["cleaned_df"] = pd.read_csv(ROOT / r["cleaned_snapshot"])
-            except:
-                pass
-        if r.get("raw_snapshot") and not isinstance(r.get("raw_df"), pd.DataFrame):
-            try:
-                r["raw_df"] = pd.read_csv(ROOT / r["raw_snapshot"])
-            except:
-                pass
-    return results
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE RENDERERS
@@ -572,6 +430,7 @@ def render_upload_and_review():
             )
         progress.progress(100, text="Done ✅")
         st.session_state.results = results
+        st.rerun()
 
     results = st.session_state.results
     if not results:
@@ -797,8 +656,8 @@ with st.sidebar:
 if page == "Upload & Review":
     render_upload_and_review()
 elif page == "Dashboard":
-    results = ensure_dataframes_loaded(st.session_state.get("results", []))
-    render_dashboard(results)
+    from dashboard import render_dashboard
+    render_dashboard(st.session_state.results)
 elif page == "Cleaned Files":
     render_cleaned_files_page()
 else:
