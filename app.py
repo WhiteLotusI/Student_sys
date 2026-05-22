@@ -33,7 +33,6 @@ from scripts.validation.validator import (
     validate_performance,
     validate_profiles,
 )
-from dashboard.dashboard import render_dashboard
 
 
 # ── directories ───────────────────────────────────────────────────────────────
@@ -658,6 +657,7 @@ with st.sidebar:
 if page == "Upload & Review":
     render_upload_and_review()
 elif page == "Dashboard":
+    from dashboard import render_dashboard
     render_dashboard(st.session_state.results)
 elif page == "Cleaned Files":
     render_cleaned_files_page()
