@@ -434,6 +434,7 @@ def render_upload_and_review():
             )
         progress.progress(100, text="Done ✅")
         st.session_state.results = results
+        st.rerun()
 
     results = st.session_state.results
     if not results:
