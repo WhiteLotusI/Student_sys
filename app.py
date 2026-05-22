@@ -368,12 +368,9 @@ def render_upload_and_review():
         help="Upload Student Profiles, Performance, and/or Attendance files together.",
     )
 
-    current_files_signature = {(f.name, f.size) for f in uploaded_files} if uploaded_files else set()
-    if current_files_signature != st.session_state.last_files_signature:
-        # Only clear results when a genuinely different set of files is uploaded
-        # Do NOT clear when signature becomes empty (happens after st.rerun())
-        if current_files_signature:
-            st.session_state.results = []
+    current_files_signature = frozenset((f.name, f.size) for f in uploaded_files) if uploaded_files else frozenset()
+    if current_files_signature and current_files_signature != st.session_state.last_files_signature:
+        st.session_state.results = []
         st.session_state.last_files_signature = current_files_signature
 
     if not uploaded_files:
