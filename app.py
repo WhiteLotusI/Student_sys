@@ -437,6 +437,10 @@ def render_upload_and_review():
         st.rerun()
 
     results = st.session_state.results
+
+    # DEBUG - remove after fix confirmed
+    st.write(f"DEBUG: results count = {len(results)}, uploaded_files = {len(uploaded_files) if uploaded_files else 0}")
+
     if not results:
         return
 
