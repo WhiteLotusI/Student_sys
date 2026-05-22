@@ -377,27 +377,29 @@ def render_upload_and_review():
         st.session_state.last_files_signature = current_files_signature
 
     if not uploaded_files:
-        st.info("⬆️ Upload one or more CSV files above to get started.")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(
-                """<div class="step-card"><b>👤 Student Profiles</b><br>
-                <small>student_id · student_name · class · gender · guardian_contact</small></div>""",
-                unsafe_allow_html=True,
-            )
-        with c2:
-            st.markdown(
-                """<div class="step-card"><b>📊 Student Performance</b><br>
-                <small>record_id · scores · result · term · subject · teacher_comment …</small></div>""",
-                unsafe_allow_html=True,
-            )
-        with c3:
-            st.markdown(
-                """<div class="step-card"><b>📅 Attendance</b><br>
-                <small>attendance_id · days_present · days_absent · total_school_days …</small></div>""",
-                unsafe_allow_html=True,
-            )
-        return
+        # If we have results from a previous run, skip the empty state and show them
+        if not st.session_state.results:
+            st.info("⬆️ Upload one or more CSV files above to get started.")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(
+                    """<div class="step-card"><b>👤 Student Profiles</b><br>
+                    <small>student_id · student_name · class · gender · guardian_contact</small></div>""",
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.markdown(
+                    """<div class="step-card"><b>📊 Student Performance</b><br>
+                    <small>record_id · scores · result · term · subject · teacher_comment …</small></div>""",
+                    unsafe_allow_html=True,
+                )
+            with c3:
+                st.markdown(
+                    """<div class="step-card"><b>📅 Attendance</b><br>
+                    <small>attendance_id · days_present · days_absent · total_school_days …</small></div>""",
+                    unsafe_allow_html=True,
+                )
+            return
 
     st.markdown(f"**{len(uploaded_files)} file(s) ready**")
     for f in uploaded_files:
